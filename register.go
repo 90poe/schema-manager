@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 )
 
 // register schema url example
@@ -17,7 +18,8 @@ import (
 //  http://localhost:8081/subjects/Kafka-key/versions
 
 type reqBody struct {
-	Schema string `json:"schema"`
+	SchemaType string `json:"schemaType"`
+	Schema     string `json:"schema"`
 }
 
 type RegisterCommand struct {
@@ -25,7 +27,6 @@ type RegisterCommand struct {
 	cmd        *flag.FlagSet
 	host       *string
 	subject    *string
-	version    *string
 	file       *string
 }
 
@@ -44,15 +45,32 @@ func (rc *RegisterCommand) uploadFile(data []byte) ([]byte, error) {
 		return nil, errors.New("failed to send a request")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 300 {
-		return nil, errors.New(fmt.Sprintf("got response with status: %s, statusCode: %d\n", resp.Status, resp.StatusCode))
-	}
-
 	data, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, errors.New("failed to read body")
 	}
+	if resp.StatusCode < 200 || resp.StatusCode > 300 {
+		return nil, errors.New(
+			fmt.Sprintf(
+				"got response with status: %s, statusCode: %d. Body: %s\n",
+				resp.Status,
+				resp.StatusCode,
+				string(data),
+			),
+		)
+	}
 	return data, nil
+}
+
+func (rc *RegisterCommand) defineSchemaType(ext string) string {
+	switch ext {
+	case ".proto":
+		return "PROTOBUF"
+	case ".json":
+		return "JSONSCHEMA"
+	default:
+		return "AVRO"
+	}
 }
 
 func (rc *RegisterCommand) Do() {
@@ -69,7 +87,11 @@ func (rc *RegisterCommand) Do() {
 		os.Exit(1)
 	}
 
-	var rBody = reqBody{Schema: string(data)}
+	ext := filepath.Ext(*rc.file)
+	rBody := reqBody{
+		Schema:     string(data),
+		SchemaType: rc.defineSchemaType(ext),
+	}
 	body, err := json.Marshal(rBody)
 	if err != nil {
 		fmt.Println("failed to marshal request body")
@@ -78,10 +100,7 @@ func (rc *RegisterCommand) Do() {
 
 	data, err = rc.uploadFile(body)
 	if err != nil {
-		fmt.Printf(
-			"failed to upload the file for subject: %s, version: %s. Error: %s\n",
-			*rc.subject, *rc.version, err.Error(),
-		)
+		fmt.Printf("failed to upload the file for subject: %s. Error: %s\n", *rc.subject, err.Error())
 		os.Exit(1)
 	}
 	fmt.Printf("API response: %s\n", string(data))
@@ -113,7 +132,6 @@ func NewRegisterCommand() *RegisterCommand {
 	host := registerCommand.String("host", "", "Schema registry host")
 	subject := registerCommand.String("subject", "", "Schema subject")
 	file := registerCommand.String("file", "", "Path to schema file")
-	version := registerCommand.String("version", "1", "Schema version")
 
 	client := &http.Client{Transport: http.DefaultTransport}
 
@@ -122,7 +140,6 @@ func NewRegisterCommand() *RegisterCommand {
 		cmd:        registerCommand,
 		host:       host,
 		subject:    subject,
-		version:    version,
 		file:       file,
 	}
 }

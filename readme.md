@@ -25,5 +25,5 @@ schema_manager download --host=schema_registry_host --file=./schemas.csv --outdi
 
 ## Register new schemas
 ```bash
-schema_manager register --host=schema_registry_host --subject=subject_name --version=v2 --file=./api.proto
+schema_manager register --host=schema_registry_host --subject=subject_name --file=./api.proto
 ```
